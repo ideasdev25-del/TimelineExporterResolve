@@ -4,42 +4,32 @@ import datetime
 import json
 
 # --- INITIALIZE RESOLVE API ---
-def get_resolve_and_fusion():
-    res = None
-    fu = None
+def get_bmd_objects():
+    # Tenta obter os objetos globais injetados pelo Resolve
+    res = globals().get("resolve")
+    fu = globals().get("fu")
     
-    # 1. Tenta pegar dos globais (se rodando via menu Utility do Resolve)
-    if "resolve" in globals():
-        res = globals()["resolve"]
-    if "fu" in globals():
-        fu = globals()["fu"]
-        
-    # 2. Fallback via import
-    if not res or not fu:
+    if not res:
         try:
             import DaVinciResolveScript as dvr
-            if not res: res = dvr.scriptapp("Resolve")
-            if not fu: fu = res.Fusion()
-        except:
-            pass
-            
+            res = dvr.scriptapp("Resolve")
+        except: pass
+    
+    if not fu and res:
+        fu = res.Fusion()
+        
     return res, fu
 
-resolve, fusion = get_resolve_and_fusion()
+resolve, fusion = get_bmd_objects()
 
 if not resolve or not fusion:
-    print("Error: Could not find DaVinci Resolve or Fusion API.")
+    print("Error: Could not connect to DaVinci Resolve API.")
     sys.exit()
 
-# Tenta obter o UIManager de forma segura
-ui = None
-if hasattr(fusion, "UIManager"):
-    ui = fusion.UIManager
-elif hasattr(fusion, "GetUIManager"): # Fallback para algumas versões
-    ui = fusion.GetUIManager()
-
-if not ui or not hasattr(ui, "NewWindow"):
-    print("Error: Fusion UIManager (UI API) is not available in this version of Resolve.")
+# Captura o UIManager
+ui = fusion.UIManager
+if not ui:
+    print("Error: UIManager not found. UI scripts may not be supported in this context.")
     sys.exit()
 
 # --- UI CONSTANTS ---
@@ -66,48 +56,53 @@ def get_color_hex(color_name):
     return colors.get(color_name, "#ffffff")
 
 # --- MAIN WINDOW DEFINITION ---
-win = ui.NewWindow(WIN_ID, WINDOW_TITLE, [
-    ui.VGroup([
-        # Header
-        ui.HGroup({"Weight": 0}, [
-            ui.Label({"ID": "HeaderLabel", "Text": WINDOW_TITLE, "Font": ui.Font({"PixelSize": 18, "Bold": True})}),
+# Removido os colchetes extras que causavam erro em algumas versões
+win_layout = ui.VGroup([
+    # Header
+    ui.HGroup({"Weight": 0}, [
+        ui.Label({"ID": "HeaderLabel", "Text": WINDOW_TITLE, "Font": ui.Font({"PixelSize": 18, "Bold": True})}),
+    ]),
+    
+    ui.Label({"Text": "Search Filters (One per line)"}),
+    ui.TextEdit({"ID": "FileNamesList", "PlaceholderText": "Ex: Clip_01\nScene_A", "Weight": 1}),
+    
+    ui.Label({"Text": "Scan Options"}),
+    ui.ComboBox({"ID": "ScanType"}),
+    
+    ui.Label({"Text": "Filter by Color"}),
+    ui.ComboBox({"ID": "ColorFilter"}),
+    
+    ui.Label({"Text": "Columns to Include"}),
+    ui.HGroup([
+        ui.VGroup([
+            ui.CheckBox({"ID": "ChkLabel", "Text": "Color Label", "Checked": True}),
+            ui.CheckBox({"ID": "ChkComments", "Text": "Comments", "Checked": True}),
+            ui.CheckBox({"ID": "ChkFrames", "Text": "Duration (Frames)", "Checked": True}),
         ]),
-        
-        ui.Label({"Text": "Search Filters (One per line)"}),
-        ui.TextEdit({"ID": "FileNamesList", "PlaceholderText": "Ex: Clip_01\nScene_A", "Weight": 1}),
-        
-        ui.Label({"Text": "Scan Options"}),
-        ui.ComboBox({"ID": "ScanType", "Text": "Full Video & Audio"}), # Add items later
-        
-        ui.Label({"Text": "Filter by Color"}),
-        ui.ComboBox({"ID": "ColorFilter", "Text": "Any Color"}),
-        
-        ui.Label({"Text": "Columns to Include"}),
-        ui.HGroup([
-            ui.VGroup([
-                ui.CheckBox({"ID": "ChkLabel", "Text": "Color Label", "Checked": True}),
-                ui.CheckBox({"ID": "ChkComments", "Text": "Comments", "Checked": True}),
-                ui.CheckBox({"ID": "ChkFrames", "Text": "Duration (Frames)", "Checked": True}),
-            ]),
-            ui.VGroup([
-                ui.CheckBox({"ID": "ChkCodecs", "Text": "Codecs", "Checked": True}),
-                ui.CheckBox({"ID": "ChkFrameRate", "Text": "Frame Rate", "Checked": True}),
-                ui.CheckBox({"ID": "ChkSize", "Text": "Aspect / Size", "Checked": True}),
-                ui.CheckBox({"ID": "ChkFilePath", "Text": "File Path", "Checked": True}),
-            ])
-        ]),
+        ui.VGroup([
+            ui.CheckBox({"ID": "ChkCodecs", "Text": "Codecs", "Checked": True}),
+            ui.CheckBox({"ID": "ChkFrameRate", "Text": "Frame Rate", "Checked": True}),
+            ui.CheckBox({"ID": "ChkSize", "Text": "Aspect / Size", "Checked": True}),
+            ui.CheckBox({"ID": "ChkFilePath", "Text": "File Path", "Checked": True}),
+        ])
+    ]),
 
-        ui.Label({"Text": "Output Folder"}),
-        ui.HGroup({"Weight": 0}, [
-            ui.LineEdit({"ID": "OutputPath", "PlaceholderText": "Select folder..."}),
-            ui.Button({"ID": "BrowseBtn", "Text": "Browse", "Weight": 0}),
-        ]),
-        
-        ui.Button({"ID": "ExportBtn", "Text": "GENERATE REPORT", "MinimumSize": [0, 40]}),
-        
-        ui.Label({"ID": "StatusLabel", "Text": "Ready", "Alignment": {"H": "Center"}}),
-    ])
+    ui.Label({"Text": "Output Folder"}),
+    ui.HGroup({"Weight": 0}, [
+        ui.LineEdit({"ID": "OutputPath", "PlaceholderText": "Select folder..."}),
+        ui.Button({"ID": "BrowseBtn", "Text": "Browse", "Weight": 0}),
+    ]),
+    
+    ui.Button({"ID": "ExportBtn", "Text": "GENERATE REPORT", "MinimumSize": [0, 40]}),
+    
+    ui.Label({"ID": "StatusLabel", "Text": "Ready", "Alignment": {"H": "Center"}}),
 ])
+
+if not hasattr(ui, "NewWindow"):
+    print("Error: NewWindow method is not callable. Check Resolve Python settings.")
+    sys.exit()
+
+win = ui.NewWindow(WIN_ID, WINDOW_TITLE, win_layout)
 
 # Initialize Dropdowns
 win.Find("ScanType").AddItems(["Video Only", "Audio Only", "Full Video & Audio"])
