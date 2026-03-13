@@ -36,7 +36,6 @@ if not fusion:
     sys.exit()
 
 ui = fusion.UIManager
-dispatcher = ui.FindEventDispatcher(fusion)
 
 # --- UI CONSTANTS ---
 WIN_ID = "com.timeline.exporter.resolve"
@@ -112,7 +111,7 @@ win.Find("ColorFilter").AddItems(color_options)
 
 # --- EVENT HANDLERS ---
 def on_close(ev):
-    dispatcher.ExitLoop()
+    win.ExitLoop()
 
 def on_browse(ev):
     path = fusion.RequestDir()
@@ -291,5 +290,5 @@ win.On.ExportBtn.Clicked = on_export
 
 # --- SHOW WINDOW ---
 win.Show()
-dispatcher.RunLoop()
-win.Hide()
+win.RunLoop()
+win.Dispose()
