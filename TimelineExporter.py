@@ -2,6 +2,7 @@ import os
 import sys
 import datetime
 import json
+import time
 
 # --- INITIALIZE RESOLVE API ---
 def get_bmd_objects():
@@ -40,11 +41,13 @@ WINDOW_TITLE = "Timeline Reporter - Resolve Edition"
 
 # --- HELPER FUNCTIONS ---
 def frames_to_tc(frames, fps):
+    fps_int = int(round(fps))
+    if fps_int == 0: fps_int = 24
     frames = int(frames)
-    hh = frames // (fps * 3600)
-    mm = (frames // (fps * 60)) % 60
-    ss = (frames // fps) % 60
-    ff = frames % fps
+    hh = frames // (fps_int * 3600)
+    mm = (frames // (fps_int * 60)) % 60
+    ss = (frames // fps_int) % 60
+    ff = frames % fps_int
     return "{:02d}:{:02d}:{:02d}:{:02d}".format(int(hh), int(mm), int(ss), int(ff))
 
 def get_color_hex(color_name):
@@ -162,20 +165,27 @@ def on_export(ev):
     if not os.path.exists(thumbs_dir):
         os.makedirs(thumbs_dir)
 
-    # Process Clipes
     all_clips = []
     fps = float(proj.GetSetting("timelineFrameRate"))
     
+    # Needs to be on the Color page for accurate still grabbing
+    resolve.OpenPage("color")
+    
+    # Cache and control original video track states to avoid upper-track occlusion
+    num_v = int(tl.GetTrackCount("video")) if tl.GetTrackCount("video") else 0
+    original_video_tracks = {}
+    for i in range(1, num_v + 1):
+        original_video_tracks[i] = tl.GetIsTrackEnabled("video", i)
+    
     # Track mapping
     tracks_to_scan = []
-    if scan_type in ["Video Only", "Full Video & Audio"]:
-        num_v = tl.GetTrackCount("video")
-        for i in range(1, int(num_v) + 1):
+    if scan_type in ["Video Only", "Full Video & Audio"] and num_v > 0:
+        for i in range(1, num_v + 1):
             tracks_to_scan.append(("video", i))
             
-    if scan_type in ["Audio Only", "Full Video & Audio"]:
-        num_a = tl.GetTrackCount("audio")
-        for i in range(1, int(num_a) + 1):
+    num_a = int(tl.GetTrackCount("audio")) if tl.GetTrackCount("audio") else 0
+    if scan_type in ["Audio Only", "Full Video & Audio"] and num_a > 0:
+        for i in range(1, num_a + 1):
             tracks_to_scan.append(("audio", i))
 
     gallery = proj.GetGallery()
@@ -185,6 +195,11 @@ def on_export(ev):
         items = tl.GetItemListInTrack(track_type, track_idx)
         if not items: continue
         
+        # Isolate track if video
+        if track_type == "video":
+            for i in range(1, num_v + 1):
+                tl.SetTrackEnable("video", i, (i == track_idx))
+                
         for item in items:
             name = item.GetName()
             color = item.GetClipColor()
@@ -217,11 +232,13 @@ def on_export(ev):
             
             # Only try to grab stills for video clips
             if track_type == "video" and gallery_album:
-                pm.SaveProject() # Save state (optional but good practice)
                 
                 # Calculate middle frame
                 mid_frame = t_in + (duration_frames // 2)
                 tl.SetCurrentTimecode(frames_to_tc(mid_frame, fps)) # go to middle frame
+                
+                # Increase sleep to guarantee UI Viewer syncs with C++ thread before GrabStill
+                time.sleep(0.5)
                 
                 # Grab a still of the current frame on the color page timeline
                 still = tl.GrabStill() # Grabs a single still at the current playhead
@@ -270,6 +287,11 @@ def on_export(ev):
             }
 
             all_clips.append(clip_data)
+
+    # Restore video track enabled states
+    if num_v > 0:
+        for i in range(1, num_v + 1):
+            tl.SetTrackEnable("video", i, original_video_tracks.get(i, True))
 
     # Sort by start frame
     all_clips.sort(key=lambda x: x["start_frame"])
