@@ -217,37 +217,37 @@ def on_export(ev):
             
             # Only try to grab stills for video clips
             if track_type == "video" and gallery_album:
-                # We move the playhead to the start of the clip to grab a still
                 pm.SaveProject() # Save state (optional but good practice)
-                tl.SetCurrentTimecode(frames_to_tc(t_in + 1, fps)) # go to first frame
+                
+                # Calculate middle frame
+                mid_frame = t_in + (duration_frames // 2)
+                tl.SetCurrentTimecode(frames_to_tc(mid_frame, fps)) # go to middle frame
                 
                 # Grab a still of the current frame on the color page timeline
-                stills = tl.GrabAllStills(1) # Grab first frame 
-                if stills and len(stills) > 0:
-                    still = stills[0]
+                still = tl.GrabStill() # Grabs a single still at the current playhead
+                
+                if still:
                     # Export the still
                     thumb_prefix = f"thumb_{t_in}_{track_idx}"
-                    # ExportStills expects a list of stills, folder path, prefix, and format
                     success = gallery_album.ExportStills([still], thumbs_dir, thumb_prefix, "jpg")
                     
                     if success:
-                        # Find the exported file (Resolve attaches some IDs to the name)
+                        # Find the exported file
                         for f in os.listdir(thumbs_dir):
                             if f.startswith(thumb_prefix) and f.endswith(".jpg"):
                                 thumb_path = os.path.join(thumbs_dir, f)
-                                # Convert to base64 so HTML is portable
                                 try:
                                     import base64
                                     with open(thumb_path, "rb") as image_file:
                                         encoded_string = base64.b64encode(image_file.read()).decode()
                                         thumb_html = f"<img src='data:image/jpeg;base64,{encoded_string}' style='max-width:80px; max-height:45px; border-radius:4px;'/>"
-                                    # Optional: clean up the thumbnail image from disk after embedding
-                                    # os.remove(thumb_path)
+                                    # Delete temporary image
+                                    os.remove(thumb_path)
                                 except Exception as e:
-                                    print("Error embedding thumbnail:", e)
+                                    pass
                                 break
                     
-                    # Delete the still from the gallery so we don't clog up the user's project
+                    # Delete the still from the gallery
                     gallery_album.DeleteStills([still])
             
             clip_data = {
