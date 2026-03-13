@@ -195,12 +195,19 @@ def on_export(ev):
         items = tl.GetItemListInTrack(track_type, track_idx)
         if not items: continue
         
-        # Isolate track if video
+        # Isolate track if video and batch capture all stills using DaVinci's built-in function
+        batch_prefix = f"thumb_v{track_idx}"
         if track_type == "video":
             for i in range(1, num_v + 1):
                 tl.SetTrackEnable("video", i, (i == track_idx))
+            
+            if gallery_album:
+                stills = tl.GrabAllStills(2) # 2 = middle frame native logic
+                if stills:
+                    gallery_album.ExportStills(stills, thumbs_dir, batch_prefix, "jpg")
+                    gallery_album.DeleteStills(stills)
                 
-        for item in items:
+        for clip_idx, item in enumerate(items, 1):
             name = item.GetName()
             color = item.GetClipColor()
             
@@ -223,49 +230,33 @@ def on_export(ev):
             # Extract data
             t_in = int(item.GetStart())
             t_out = int(item.GetEnd())
-            duration_frames = t_out - t_in # Calculate precise frame duration on timeline
-            
+            duration_frames = t_out - t_in
             s_in = mp_item.GetClipProperty("Start TC") if mp_item else "-"
             
             # Handle Thumbnail
             thumb_html = "🎵" if track_type == "audio" else "🎞️"
             
-            # Only try to grab stills for video clips
+            # Process Batch Extracted Stills
             if track_type == "video" and gallery_album:
+                expected_start = f"{batch_prefix}_{track_idx}.{clip_idx}."
                 
-                # Calculate middle frame
-                mid_frame = t_in + (duration_frames // 2)
-                tl.SetCurrentTimecode(frames_to_tc(mid_frame, fps)) # go to middle frame
-                
-                # Increase sleep to guarantee UI Viewer syncs with C++ thread before GrabStill
-                time.sleep(0.5)
-                
-                # Grab a still of the current frame on the color page timeline
-                still = tl.GrabStill() # Grabs a single still at the current playhead
-                
-                if still:
-                    # Export the still
-                    thumb_prefix = f"thumb_{t_in}_{track_idx}"
-                    success = gallery_album.ExportStills([still], thumbs_dir, thumb_prefix, "jpg")
-                    
-                    if success:
-                        # Find the exported file
-                        for f in os.listdir(thumbs_dir):
-                            if f.startswith(thumb_prefix) and f.endswith(".jpg"):
-                                thumb_path = os.path.join(thumbs_dir, f)
-                                try:
-                                    import base64
-                                    with open(thumb_path, "rb") as image_file:
-                                        encoded_string = base64.b64encode(image_file.read()).decode()
-                                        thumb_html = f"<img src='data:image/jpeg;base64,{encoded_string}' style='max-width:80px; max-height:45px; border-radius:4px;'/>"
-                                    # Delete temporary image
-                                    os.remove(thumb_path)
-                                except Exception as e:
-                                    pass
-                                break
-                    
-                    # Delete the still from the gallery
-                    gallery_album.DeleteStills([still])
+                try:
+                    for f in os.listdir(thumbs_dir):
+                        if f.startswith(expected_start) and f.endswith(".jpg"):
+                            thumb_path = os.path.join(thumbs_dir, f)
+                            
+                            import base64
+                            with open(thumb_path, "rb") as image_file:
+                                encoded_string = base64.b64encode(image_file.read()).decode()
+                                thumb_html = f"<img src='data:image/jpeg;base64,{encoded_string}' style='max-width:80px; max-height:45px; border-radius:4px;'/>"
+                            
+                            # Clean up temporary exported images and metadata
+                            os.remove(thumb_path)
+                            drx_path = thumb_path.replace(".jpg", ".drx")
+                            if os.path.exists(drx_path): os.remove(drx_path)
+                            break
+                except Exception as e:
+                    pass
             
             clip_data = {
                 "thumbnail": thumb_html,
