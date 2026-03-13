@@ -4,38 +4,43 @@ import datetime
 import json
 
 # --- INITIALIZE RESOLVE API ---
-def get_resolve():
-    try:
-        # Check if already in DaVinci Resolve
-        if 'resolve' in globals():
-            return globals()['resolve']
+def get_resolve_and_fusion():
+    res = None
+    fu = None
+    
+    # 1. Tenta pegar dos globais (se rodando via menu Utility do Resolve)
+    if "resolve" in globals():
+        res = globals()["resolve"]
+    if "fu" in globals():
+        fu = globals()["fu"]
         
-        # Try importing the script API
-        import DaVinciResolveScript as dvr
-        return dvr.scriptapp("Resolve")
-    except ImportError:
-        return None
+    # 2. Fallback via import
+    if not res or not fu:
+        try:
+            import DaVinciResolveScript as dvr
+            if not res: res = dvr.scriptapp("Resolve")
+            if not fu: fu = res.Fusion()
+        except:
+            pass
+            
+    return res, fu
 
-resolve = get_resolve()
-if not resolve:
-    # Try common Windows path as fallback
-    try:
-        sys.path.append(r"C:\Program Files\Blackmagic Design\DaVinci Resolve")
-        import DaVinciResolveScript as dvr
-        resolve = dvr.scriptapp("Resolve")
-    except:
-        pass
+resolve, fusion = get_resolve_and_fusion()
 
-if not resolve:
-    print("Error: Could not find DaVinci Resolve. Please run from Workspace > Scripts.")
+if not resolve or not fusion:
+    print("Error: Could not find DaVinci Resolve or Fusion API.")
     sys.exit()
 
-fusion = resolve.Fusion()
-if not fusion:
-    print("Error: Could not access Fusion. Please ensure Fusion is initialized.")
-    sys.exit()
+# Tenta obter o UIManager de forma segura
+ui = None
+if hasattr(fusion, "UIManager"):
+    ui = fusion.UIManager
+elif hasattr(fusion, "GetUIManager"): # Fallback para algumas versões
+    ui = fusion.GetUIManager()
 
-ui = fusion.UIManager
+if not ui or not hasattr(ui, "NewWindow"):
+    print("Error: Fusion UIManager (UI API) is not available in this version of Resolve.")
+    sys.exit()
 
 # --- UI CONSTANTS ---
 WIN_ID = "com.timeline.exporter.resolve"
