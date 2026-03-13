@@ -31,8 +31,12 @@ if not resolve:
     sys.exit()
 
 fusion = resolve.Fusion()
+if not fusion:
+    print("Error: Could not access Fusion. Please ensure Fusion is initialized.")
+    sys.exit()
+
 ui = fusion.UIManager
-dispatcher = fusion.FindEventDispatcher(ui)
+dispatcher = ui.FindEventDispatcher(fusion)
 
 # --- UI CONSTANTS ---
 WIN_ID = "com.timeline.exporter.resolve"
