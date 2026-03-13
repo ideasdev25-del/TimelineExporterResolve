@@ -157,6 +157,11 @@ def on_export(ev):
         "filePath": win.Find("ChkFilePath").Checked,
     }
 
+    # Setup Thumbnail Directory
+    thumbs_dir = os.path.join(out_dir, "Thumbnails")
+    if not os.path.exists(thumbs_dir):
+        os.makedirs(thumbs_dir)
+
     # Process Clipes
     all_clips = []
     fps = float(proj.GetSetting("timelineFrameRate"))
@@ -173,6 +178,9 @@ def on_export(ev):
         for i in range(1, int(num_a) + 1):
             tracks_to_scan.append(("audio", i))
 
+    gallery = proj.GetGallery()
+    gallery_album = gallery.GetCurrentStillAlbum() if gallery else None
+    
     for track_type, track_idx in tracks_to_scan:
         items = tl.GetItemListInTrack(track_type, track_idx)
         if not items: continue
@@ -204,19 +212,57 @@ def on_export(ev):
             
             s_in = mp_item.GetClipProperty("Start TC") if mp_item else "-"
             
+            # Handle Thumbnail
+            thumb_html = "🎵" if track_type == "audio" else "🎞️"
+            
+            # Only try to grab stills for video clips
+            if track_type == "video" and gallery_album:
+                # We move the playhead to the start of the clip to grab a still
+                pm.SaveProject() # Save state (optional but good practice)
+                tl.SetCurrentTimecode(frames_to_tc(t_in + 1, fps)) # go to first frame
+                
+                # Grab a still of the current frame on the color page timeline
+                stills = tl.GrabAllStills(1) # Grab first frame 
+                if stills and len(stills) > 0:
+                    still = stills[0]
+                    # Export the still
+                    thumb_prefix = f"thumb_{t_in}_{track_idx}"
+                    # ExportStills expects a list of stills, folder path, prefix, and format
+                    success = gallery_album.ExportStills([still], thumbs_dir, thumb_prefix, "jpg")
+                    
+                    if success:
+                        # Find the exported file (Resolve attaches some IDs to the name)
+                        for f in os.listdir(thumbs_dir):
+                            if f.startswith(thumb_prefix) and f.endswith(".jpg"):
+                                thumb_path = os.path.join(thumbs_dir, f)
+                                # Convert to base64 so HTML is portable
+                                try:
+                                    import base64
+                                    with open(thumb_path, "rb") as image_file:
+                                        encoded_string = base64.b64encode(image_file.read()).decode()
+                                        thumb_html = f"<img src='data:image/jpeg;base64,{encoded_string}' style='max-width:80px; max-height:45px; border-radius:4px;'/>"
+                                    # Optional: clean up the thumbnail image from disk after embedding
+                                    # os.remove(thumb_path)
+                                except Exception as e:
+                                    print("Error embedding thumbnail:", e)
+                                break
+                    
+                    # Delete the still from the gallery so we don't clog up the user's project
+                    gallery_album.DeleteStills([still])
+            
             clip_data = {
-                "thumbnail": "🎵" if track_type == "audio" else "🎞️",
+                "thumbnail": thumb_html,
                 "color": get_color_hex(color),
                 "name": name,
                 "filePath": mp_item.GetClipProperty("File Path") if mp_item else "-",
                 "track": ("V" if track_type == "video" else "A") + str(track_idx),
                 "fps": mp_item.GetClipProperty("FPS") if mp_item else "-",
                 "size": mp_item.GetClipProperty("Resolution") if mp_item else "-",
-                "codec": mp_item.GetClipProperty("Video Codec") if mp_item else "-", # Changed from Format
+                "codec": mp_item.GetClipProperty("Video Codec") if mp_item else "-", 
                 "tIn": frames_to_tc(t_in, fps),
                 "tOut": frames_to_tc(t_out, fps),
                 "sIn": s_in,
-                "sOut": "-", # Source out requires more math in Resolve API
+                "sOut": "-", 
                 "duration": frames_to_tc(duration_frames, fps),
                 "frames": duration_frames,
                 "comments": mp_item.GetMetadata("Description") or mp_item.GetMetadata("Comments") or "-",
