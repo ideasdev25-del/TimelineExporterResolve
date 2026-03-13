@@ -5,9 +5,9 @@ import json
 
 # --- INITIALIZE RESOLVE API ---
 def get_bmd_objects():
-    # Tenta obter os objetos globais injetados pelo Resolve
     res = globals().get("resolve")
     fu = globals().get("fu")
+    bmd_obj = globals().get("bmd")
     
     if not res:
         try:
@@ -18,18 +18,20 @@ def get_bmd_objects():
     if not fu and res:
         fu = res.Fusion()
         
-    return res, fu
+    return res, fu, bmd_obj
 
-resolve, fusion = get_bmd_objects()
+resolve, fusion, bmd = get_bmd_objects()
 
-if not resolve or not fusion:
-    print("Error: Could not connect to DaVinci Resolve API.")
+if not resolve or not fusion or not bmd:
+    print("Error: Could not connect to DaVinci Resolve API or 'bmd' module wrapper.")
     sys.exit()
 
-# Captura o UIManager
+# Captura o UIManager e o UIDispatcher
 ui = fusion.UIManager
-if not ui:
-    print("Error: UIManager not found. UI scripts may not be supported in this context.")
+dispatcher = bmd.UIDispatcher(ui)
+
+if not ui or not dispatcher:
+    print("Error: UIManager or UIDispatcher not found. UI scripts may not be supported in this context.")
     sys.exit()
 
 # --- UI CONSTANTS ---
@@ -56,7 +58,6 @@ def get_color_hex(color_name):
     return colors.get(color_name, "#ffffff")
 
 # --- MAIN WINDOW DEFINITION ---
-# Removido os colchetes extras que causavam erro em algumas versões
 win_layout = ui.VGroup([
     # Header
     ui.HGroup({"Weight": 0}, [
@@ -98,11 +99,11 @@ win_layout = ui.VGroup([
     ui.Label({"ID": "StatusLabel", "Text": "Ready", "Alignment": {"H": "Center"}}),
 ])
 
-if not hasattr(ui, "NewWindow"):
-    print("Error: NewWindow method is not callable. Check Resolve Python settings.")
-    sys.exit()
-
-win = ui.NewWindow(WIN_ID, WINDOW_TITLE, win_layout)
+win = dispatcher.AddWindow({
+    'ID': WIN_ID,
+    'Geometry': [ 100, 100, 600, 750 ],
+    'WindowTitle': WINDOW_TITLE,
+}, win_layout)
 
 # Initialize Dropdowns
 win.Find("ScanType").AddItems(["Video Only", "Audio Only", "Full Video & Audio"])
@@ -111,7 +112,7 @@ win.Find("ColorFilter").AddItems(color_options)
 
 # --- EVENT HANDLERS ---
 def on_close(ev):
-    win.ExitLoop()
+    dispatcher.ExitLoop()
 
 def on_browse(ev):
     path = fusion.RequestDir()
@@ -284,11 +285,10 @@ def on_export(ev):
     win.Find("ExportBtn").Enabled = True
 
 # --- BIND EVENTS ---
-win.On.MainWindow.Close = on_close
-win.On.BrowseBtn.Clicked = on_browse
-win.On.ExportBtn.Clicked = on_export
+win.On[WIN_ID].Close = on_close
+win.On["BrowseBtn"].Clicked = on_browse
+win.On["ExportBtn"].Clicked = on_export
 
 # --- SHOW WINDOW ---
 win.Show()
-win.RunLoop()
-win.Dispose()
+dispatcher.RunLoop()
