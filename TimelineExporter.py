@@ -198,12 +198,11 @@ def on_export(ev):
             if not mp_item: continue
             
             # Extract data
-            duration_frames = int(item.GetDuration())
             t_in = int(item.GetStart())
             t_out = int(item.GetEnd())
+            duration_frames = t_out - t_in # Calculate precise frame duration on timeline
+            
             s_in = mp_item.GetClipProperty("Start TC") if mp_item else "-"
-            # DaVinci API doesn't have direct Source Out as easily as Start, 
-            # so we approximate or use Source Duration
             
             clip_data = {
                 "thumbnail": "🎵" if track_type == "audio" else "🎞️",
@@ -213,7 +212,7 @@ def on_export(ev):
                 "track": ("V" if track_type == "video" else "A") + str(track_idx),
                 "fps": mp_item.GetClipProperty("FPS") if mp_item else "-",
                 "size": mp_item.GetClipProperty("Resolution") if mp_item else "-",
-                "codec": mp_item.GetClipProperty("Format") if mp_item else "-",
+                "codec": mp_item.GetClipProperty("Video Codec") if mp_item else "-", # Changed from Format
                 "tIn": frames_to_tc(t_in, fps),
                 "tOut": frames_to_tc(t_out, fps),
                 "sIn": s_in,
@@ -223,6 +222,7 @@ def on_export(ev):
                 "comments": mp_item.GetMetadata("Description") or mp_item.GetMetadata("Comments") or "-",
                 "start_frame": t_in
             }
+
             all_clips.append(clip_data)
 
     # Sort by start frame
